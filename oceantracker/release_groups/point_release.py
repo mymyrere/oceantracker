@@ -64,55 +64,69 @@ class PointRelease(ParameterBaseClass):
         # short cut
         release_info =self.info['release_info']
 
-        if params['release_start_date'] is None:
-            # no user start date so use  model runs' start date
-            time_start= hindcast_start if not si.backtracking else hindcast_end
+        if params['custom_release'] is None:
+
+            if params['release_start_date'] is None:
+                # no user start date so use  model runs' start date
+                time_start= hindcast_start if not si.backtracking else hindcast_end
+            else:
+                # user given start date
+                time_start = time_util.isostr_to_seconds(params['release_start_date'])
+
+            # now check if start in range
+            n_groups_so_far =len(si.classes['release_groups'])
+            if not hindcast_start <= time_start <= hindcast_end:
+                si.msg_logger.msg('Release group= ' + str(n_groups_so_far + 1) + ', name= ' + self.info['name'] + ',  parameter release_start_time is ' +
+                                        time_util.seconds_to_isostr(time_start)
+                                  + '  is outside hindcast range ' + time_util.seconds_to_isostr(hindcast_start)
+                                        + ' to ' + time_util.seconds_to_isostr(hindcast_end), warning=True)
+
+            # set max age of particles
+            release_interval = model_time_step if params['release_interval'] is None else params['release_interval']
+
+            # world out release times
+            if release_interval == 0.:
+                time_end = time_start
+            elif self.params['release_duration'] is not None:
+                time_end = time_start + si.model_direction*self.params['release_duration']
+
+            elif self.params['release_end_date'] is not None:
+                time_end = time_util.isostr_to_seconds(self.params['release_end_date'])
+            else:
+                # default is limit of hindcast
+                time_end = hindcast_start if si.backtracking else hindcast_end
+
+            # get time steps for release in a dow safe way
+            model_time_step = si.model_time_step
+
+
+            # get release times within the hindcast
+            if abs(time_end-time_start) < model_time_step:
+                # have only one release
+                release_info['release_times'] = np.asarray(time_start)
+            else:
+                release_info['release_times'] = time_start + np.arange(0., abs(time_end-time_start),release_interval )*si.model_direction
+
+            # trim releases to be within hindcast
+            sel = np.logical_and( release_info['release_times'] >= hindcast_start,  release_info['release_times']  <= hindcast_end)
+            release_info['release_times'] = release_info['release_times'][sel]
+
         else:
-            # user given start date
-            time_start = time_util.isostr_to_seconds(params['release_start_date'])
+            import pandas as pd
+            df=pd.read_csv(params['custom_release'],
+                delimiter=',',parse_dates=[0],header=None,skiprows=1).set_index(0)
 
-        # now check if start in range
-        n_groups_so_far =len(si.classes['release_groups'])
-        if not hindcast_start <= time_start <= hindcast_end:
-            si.msg_logger.msg('Release group= ' + str(n_groups_so_far + 1) + ', name= ' + self.info['name'] + ',  parameter release_start_time is ' +
-                                    time_util.seconds_to_isostr(time_start)
-                              + '  is outside hindcast range ' + time_util.seconds_to_isostr(hindcast_start)
-                                    + ' to ' + time_util.seconds_to_isostr(hindcast_end), warning=True)
+            time_start = time_util.isostr_to_seconds(df.index[0])
+            time_end = time_util.isostr_to_seconds(df.index[-1])
+            release_info['release_times']=np.asarray([time_util.isostr_to_seconds(x) for x in df.index])
+            release_info['n_required']=df[1].values
 
-        # set max age of particles
-        release_interval = model_time_step if params['release_interval'] is None else params['release_interval']
-
-        # world out release times
-        if release_interval == 0.:
-            time_end = time_start
-        elif self.params['release_duration'] is not None:
-            time_end = time_start + si.model_direction*self.params['release_duration']
-
-        elif self.params['release_end_date'] is not None:
-            time_end = time_util.isostr_to_seconds(self.params['release_end_date'])
-        else:
-            # default is limit of hindcast
-            time_end = hindcast_start if si.backtracking else hindcast_end
-
-        # get time steps for release in a dow safe way
-        model_time_step = si.model_time_step
-
-
-        # get release times within the hindcast
-        if abs(time_end-time_start) < model_time_step:
-            # have only one release
-            release_info['release_times'] = np.asarray(time_start)
-        else:
-            release_info['release_times'] = time_start + np.arange(0., abs(time_end-time_start),release_interval )*si.model_direction
-
-        # trim releases to be within hindcast
-        sel = np.logical_and( release_info['release_times'] >= hindcast_start,  release_info['release_times']  <= hindcast_end)
-        release_info['release_times'] = release_info['release_times'][sel]
 
         if release_info['release_times'].size ==0:
             ml.msg(f'No release times in range of hydro-model for release_group {info["instance_number"]:2d}, ',
                    fatal_error=True,
                    hint=' Check hydro-model date range and release dates  ' , exit_now = True)
+
 
         # get time steps when released, used to determine when to release
         release_info['release_time_steps'] =  np.round(( release_info['release_times']- hindcast_start)/model_time_step).astype(np.int32)
@@ -191,6 +205,20 @@ class PointRelease(ParameterBaseClass):
                                             si.classes['field_group_manager'].n_buffer)
             x0 = np.hstack((x0[:, :2], z))
 
+        elif si.hydro_model_is3D and np.any(x0[:,-1]>0):
+            si.msg_logger.msg(f'Release depth is positive, the release will be above seabed',
+                              warning=True,
+                           hint=f'If you want release below sea surface change to negative values' )
+
+            z = self.get_release_seabed(n_cell_guess,
+                                            grid['zlevel'], grid['bottom_cell_index'] , grid['triangles'],
+                                            si.classes['field_group_manager'].n_buffer)
+
+
+            x0 = np.hstack((x0[:, :2], x0[:, -1]+z))
+
+
+
         return x0, IDrelease_group, IDpulse, user_release_groupID, n_cell_guess
 
     @staticmethod
@@ -217,11 +245,36 @@ class PointRelease(ParameterBaseClass):
 
         return z
 
+    @staticmethod
+    @njit()
+    def get_release_seabed(ncell, zlevel, bottom_cell_index ,triangles, nb):
+        # get release in range of top and bottom
+        nx = ncell.shape[0]
 
+        z = np.full((nx,1),0.)
+
+        for n in range(nx):
+            # get mean depth of triangle by summing
+            zbot = 0.
+            for m in range(3):
+                node = triangles[ncell[n],m]
+                zbot += zlevel[nb[0], node, bottom_cell_index[node]]
+
+            z[n] =zbot/3.
+
+        return z
 
 
     def get_number_required(self):
-        return self.params['pulse_size']*self.info['points'].shape[0]
+        # import pdb;pdb.set_trace()
+        # self.info['release_info']['n_required']
+
+        if self.info['release_info']['n_required'] is not None:
+            pulse_size=self.info['release_info']['n_required'][self.info['release_info']['index_of_next_release']]
+        else:
+            pulse_size=self.params['pulse_size']
+
+        return pulse_size*self.info['points'].shape[0]
 
     def get_release_location_candidates(self):
         si = self.shared_info

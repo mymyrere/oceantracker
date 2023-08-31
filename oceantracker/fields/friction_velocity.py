@@ -25,6 +25,7 @@ class FrictionVelocity(UserFieldBase):
         si = self.shared_info
         grid = si.classes['reader'].grid
         fields = si.classes['fields']
+
         self.calc_fiction_velocity(buffer_index, grid['zlevel'], grid['bottom_cell_index'], si.z0, fields['water_velocity'].data , self.data)
 
 
@@ -35,13 +36,17 @@ class FrictionVelocity(UserFieldBase):
         # based on log layer  u= u_* log(z/z0)/kappa
         for nt in buffer_index:
             for n in np.arange(zlevel.shape[1]): # loop over nodes
+
                 nz1=bottom_cell_index[n]+1
                 dz =  zlevel[nt, n, nz1] - zlevel[nt, n, bottom_cell_index[n]] # size of bottom cell
                 if dz < z0:
                     out[nt, n, 0, 0]= 0.
                 else:
+                    rho_water=1027.0
                     speed = np.sqrt(water_velocity[nt, n, nz1, 0]**2 + water_velocity[nt, n, nz1, 1]**2)
-                    out[nt, n, 0, 0] = 0.4*speed/np.log((dz+z0)/z0)
+                    Cdrag=(0.4/np.log(dz/z0))**2
+                    out[nt, n, 0, 0] = rho_water*Cdrag*speed**2#0.4*speed/np.log((dz+z0)/z0)
+                    #print(out[nt, n, 0, 0])
 
 
 

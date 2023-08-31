@@ -95,11 +95,18 @@ class PolygonStats2D_timeBased(_CorePolygonMethods, gridded_statistics.GriddedSt
         part_prop = si.classes['particle_properties']
         g = self.grid
 
+
+
+
         # update time stats  recorded
 
         # set up pointers to particle properties
         p_groupID = part_prop['IDrelease_group'].used_buffer()
         p_x       = part_prop['x'].used_buffer()
+
+        # manual update which polygon particles are inside
+        inside_poly_prop = part_prop[self.info['inside_polygon_particle_prop']]
+        inside_poly_prop.update(sel)
 
         # manual update which polygon particles are inside
         inside_poly_prop = part_prop[self.info['inside_polygon_particle_prop']]
@@ -164,8 +171,11 @@ class PolygonStats2D_ageBased(_CorePolygonMethods, gridded_statistics.GriddedSta
 
     def do_counts(self, time_sec, sel):
 
+        if not self.is_time_to_count(): return
+
         part_prop = self.shared_info.classes['particle_properties']
         stats_grid = self.grid
+
 
         # update time stats  recorded
         self.record_time_stats_last_recorded(time_sec)
@@ -179,6 +189,10 @@ class PolygonStats2D_ageBased(_CorePolygonMethods, gridded_statistics.GriddedSta
         inside_poly_prop = part_prop[self.info['inside_polygon_particle_prop']]
         inside_poly_prop.update(sel)
 
+
+        # manual update which polygon particles are inside
+        inside_poly_prop = part_prop[self.info['inside_polygon_particle_prop']]
+        inside_poly_prop.update(sel)
 
         # loop over statistics polygons
         self.do_counts_and_summing_numba(inside_poly_prop.used_buffer(), p_groupID, p_x, self.count_age_bins,

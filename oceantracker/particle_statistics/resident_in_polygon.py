@@ -104,6 +104,8 @@ class ResidentInPolygon(_BaseParticleLocationStats):
         rg  = self.release_group_to_count
 
 
+
+
         # update time stats  recorded
         self.record_time_stats_last_recorded(time_sec)
 

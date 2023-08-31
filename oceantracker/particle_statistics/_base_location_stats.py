@@ -162,6 +162,26 @@ class _BaseParticleLocationStats(ParameterBaseClass):
         out =   info['start_time'] * md <=  si.solver_info['current_model_time'] * md  <= info['end_time'] * md
         return out
 
+    def is_time_to_count(self):
+        si = self.shared_info
+        params= self.params
+        info=self.info
+        md = si.model_direction
+
+        if params['count_start_date'] is None:
+            info['start_time'] = si.solver_info['model_start_time']
+        else:
+            info['start_time'] = time_util.iso8601str_to_seconds(params['count_start_date'])
+
+        if params['count_end_date'] is None:
+            info['end_time'] = si.solver_info['model_start_time'] + md * si.solver_info['model_duration']
+        else:
+            info['end_time'] = time_util.iso8601str_to_seconds(params['count_end_date'])
+
+
+        out =   info['start_time'] * md <=  si.solver_info['current_model_time'] * md  <= info['end_time'] * md
+        return out
+
     def record_time_stats_last_recorded(self, t):   self .info['time_last_stats_recorded'] = t
 
     # overload this method to subset indicies in out of particles to count
@@ -224,6 +244,7 @@ class _BaseParticleLocationStats(ParameterBaseClass):
 
     def write_time_varying_stats(self, n, time):
         # write nth step in file
+
         fh = self.nc.file_handle
         fh['time'][n] = time
         fh['count'][n, ...] = self.count_time_slice[:, ...]
